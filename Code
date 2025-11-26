@@ -1,0 +1,270 @@
+/*
+ * Banking Queue Management System
+ * -------------------------------
+ * A Priority Queue simulation using a Linked List.
+ * Priority Rules:
+ * 1. VIP Status
+ * 2. Senior Citizen (Age >= 60)
+ * 3. Regular
+ * *Tie-breaker: Older customers get priority within the same category.
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define MAX_NAME 50
+
+// Enum for code readability
+typedef enum {
+    REGULAR = 0,
+    SENIOR = 1,
+    VIP = 2
+} SocialStatus;
+
+// Node structure for the Linked List
+typedef struct Customer {
+    char name[MAX_NAME];
+    int age;
+    SocialStatus status;
+    struct Customer* next;
+} Customer;
+
+// Struct to hold global statistics
+typedef struct {
+    int totalServed;
+    int deposits;
+    int withdrawals;
+    int newAccounts;
+} BankStats;
+
+// --- Function Prototypes ---
+Customer* createNode(char* name, int age, int isVIP);
+void enqueue(Customer** head, char* name, int age, int isVIP);
+Customer* dequeue(Customer** head);
+void serveCustomer(Customer* c, BankStats* stats);
+void displayQueue(Customer* head);
+const char* getStatusString(SocialStatus s);
+void flushInput();
+
+int main() {
+    Customer* queueHead = NULL;
+    BankStats stats = {0, 0, 0, 0};
+    int choice;
+    char name[MAX_NAME];
+    int age, isVIP;
+
+    printf("=== BANKING QUEUE MANAGEMENT SYSTEM ===\n");
+
+    while (1) {
+        printf("\n--- Main Menu ---\n");
+        printf("1. Add Customer\n");
+        printf("2. Display Queue\n");
+        printf("3. Serve Next Customer\n");
+        printf("4. Exit System\n");
+        printf("Enter choice: ");
+        
+        if (scanf("%d", &choice) != 1) {
+            printf("Invalid input. Please enter a number.\n");
+            flushInput();
+            continue;
+        }
+        flushInput(); // Clear newline left by scanf
+
+        switch (choice) {
+            case 1: // Add Customer
+                printf("Enter Name: ");
+                fgets(name, MAX_NAME, stdin);
+                name[strcspn(name, "\n")] = 0; // Remove newline
+
+                printf("Enter Age: ");
+                scanf("%d", &age);
+                
+                printf("Is this customer VIP? (1 for Yes, 0 for No): ");
+                scanf("%d", &isVIP);
+                
+                enqueue(&queueHead, name, age, isVIP);
+                printf("-> Customer added to queue.\n");
+                break;
+
+            case 2: // Display Queue
+                displayQueue(queueHead);
+                break;
+
+            case 3: // Serve Customer
+                if (queueHead == NULL) {
+                    printf("Queue is empty! No one to serve.\n");
+                } else {
+                    Customer* served = dequeue(&queueHead);
+                    serveCustomer(served, &stats);
+                    free(served); // Free memory after service
+                }
+                break;
+
+            case 4: // Exit
+                printf("\n=== Final Statistics ===\n");
+                printf("Total Customers Served: %d\n", stats.totalServed);
+                printf("Deposits: %d | Withdrawals: %d | New Accounts: %d\n", 
+                       stats.deposits, stats.withdrawals, stats.newAccounts);
+                printf("Exiting... Goodbye!\n");
+                
+                // Free remaining nodes
+                while(queueHead != NULL) {
+                    Customer* temp = dequeue(&queueHead);
+                    free(temp);
+                }
+                return 0;
+
+            default:
+                printf("Invalid option. Try again.\n");
+        }
+    }
+    return 0;
+}
+
+// --- Helper Functions ---
+
+// Helper to flush stdin buffer (solves skipped scanf inputs)
+void flushInput() {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+}
+
+// Convert enum to string for display
+const char* getStatusString(SocialStatus s) {
+    switch(s) {
+        case VIP: return "VIP";
+        case SENIOR: return "Senior Citizen";
+        case REGULAR: return "Regular";
+        default: return "Unknown";
+    }
+}
+
+// Create a new customer node
+Customer* createNode(char* name, int age, int isVIP) {
+    Customer* newNode = (Customer*)malloc(sizeof(Customer));
+    if (!newNode) {
+        printf("Memory allocation failed!\n");
+        exit(1);
+    }
+    strcpy(newNode->name, name);
+    newNode->age = age;
+    newNode->next = NULL;
+
+    // Logic to determine status
+    if (isVIP) {
+        newNode->status = VIP;
+    } else if (age >= 60) {
+        newNode->status = SENIOR;
+    } else {
+        newNode->status = REGULAR;
+    }
+    return newNode;
+}
+
+// Add customer to queue based on Priority logic
+void enqueue(Customer** head, char* name, int age, int isVIP) {
+    Customer* newNode = createNode(name, age, isVIP);
+
+    // Case 1: Queue is empty OR New node has higher priority than Head
+    // Logic: Higher Status value is better. If Status equal, Higher Age is better.
+    if (*head == NULL || 
+        (newNode->status > (*head)->status) || 
+        (newNode->status == (*head)->status && newNode->age > (*head)->age)) {
+        
+        newNode->next = *head;
+        *head = newNode;
+        return;
+    }
+
+    // Case 2: Traverse to find correct position
+    Customer* current = *head;
+    while (current->next != NULL) {
+        // Check if new node should come AFTER current->next
+        // We continue moving if current->next has higher or equal priority
+        int nextStatus = current->next->status;
+        int nextAge = current->next->age;
+
+        if (nextStatus > newNode->status) {
+            current = current->next; // Next one is more important, keep moving
+        } else if (nextStatus == newNode->status && nextAge >= newNode->age) {
+            current = current->next; // Same status, but next is older/same age, keep moving
+        } else {
+            break; // Found the spot!
+        }
+    }
+
+    // Insert node
+    newNode->next = current->next;
+    current->next = newNode;
+}
+
+// Remove the first customer (Highest Priority)
+Customer* dequeue(Customer** head) {
+    if (*head == NULL) return NULL;
+    Customer* temp = *head;
+    *head = (*head)->next;
+    return temp;
+}
+
+// Perform service transactions
+void serveCustomer(Customer* c, BankStats* stats) {
+    int serviceChoice;
+    float amount;
+    
+    printf("\n>>> Serving: %s (%s, Age: %d) <<<\n", 
+           c->name, getStatusString(c->status), c->age);
+    
+    printf("Select Service:\n");
+    printf("1. Withdraw Money\n");
+    printf("2. Deposit Money\n");
+    printf("3. Create New Account\n");
+    printf("4. No Service (Exit)\n");
+    printf("Choice: ");
+    
+    scanf("%d", &serviceChoice);
+    flushInput();
+
+    switch(serviceChoice) {
+        case 1: // Withdraw
+            printf("Enter amount to withdraw: ");
+            scanf("%f", &amount);
+            printf("-> Transaction Approved: %.2f withdrawn successfully.\n", amount);
+            stats->withdrawals++;
+            break;
+        case 2: // Deposit
+            printf("Enter amount to deposit: ");
+            scanf("%f", &amount);
+            printf("-> Success: %.2f deposited to account.\n", amount);
+            stats->deposits++;
+            break;
+        case 3: // New Account
+            printf("-> New Account created for %s. Welcome aboard!\n", c->name);
+            stats->newAccounts++;
+            break;
+        case 4:
+            printf("-> Customer left without transaction.\n");
+            break;
+        default:
+            printf("-> Invalid selection. Session ended.\n");
+    }
+    stats->totalServed++;
+    flushInput(); // Clean up for main menu
+}
+
+// Print the entire queue
+void displayQueue(Customer* head) {
+    if (head == NULL) {
+        printf("\n[ Queue is Empty ]\n");
+        return;
+    }
+    printf("\n--- Current Queue (Highest Priority Top) ---\n");
+    Customer* current = head;
+    int i = 1;
+    while (current != NULL) {
+        printf("%d. [%s] %s (Age: %d)\n", 
+               i++, getStatusString(current->status), current->name, current->age);
+        current = current->next;
+    }
+    printf("--------------------------------------------\n");
+}
